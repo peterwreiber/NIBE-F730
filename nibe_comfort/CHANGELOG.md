@@ -1,5 +1,14 @@
 # Ändringslogg
 
+## Nästa version
+
+- Korta myUplink-avbrott (upp till 30 minuter) visas lugnt i stället för som
+  ett fel, och fyller inte ändringsloggen med par av pausad/återupptagen.
+  Senaste värden och planen ligger kvar. Inga ändringar skickas under
+  avbrottet, och längre avbrott visas som fel precis som tidigare.
+- Inställningar går att spara medan pumpens värden är otillgängliga. De
+  kontrolleras och används när värdena är tillbaka.
+
 ## 0.2.36
 
 - Ny vy **När går elpatronen?** visar elpatronens egen effekt, observerade
