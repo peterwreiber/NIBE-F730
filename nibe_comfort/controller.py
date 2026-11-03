@@ -270,6 +270,18 @@ class HomeAssistant:
             "{% for eid in device_entities(did) %}"
             "{% set ns.items = ns.items + "
             "[{'entity_id': eid, 'device_id': did, 'platform': 'climate_device'}] %}"
+            "{% endfor %}{% endif %}{% endfor %}"
+            # Room sensors often report only on change; a fresh humidity or battery value from the
+            # same device and integration proves an unchanged temperature is still current.
+            "{% for s in states.sensor | selectattr('attributes.device_class', 'defined')"
+            " | selectattr('attributes.device_class', 'eq', 'temperature') %}"
+            "{% set did = device_id(s.entity_id) %}"
+            "{% if did and did not in ns.items | map(attribute='device_id') | list %}"
+            "{% set entry = config_entry_id(s.entity_id) %}"
+            "{% for eid in device_entities(did) if eid.split('.')[0] in ['sensor', 'binary_sensor']"
+            " and config_entry_id(eid) == entry %}"
+            "{% set ns.items = ns.items + "
+            "[{'entity_id': eid, 'device_id': did, 'platform': 'room_device'}] %}"
             "{% endfor %}{% endif %}{% endfor %}{{ ns.items | to_json }}"
         )
         registry = self.request("/template", {"template": template})

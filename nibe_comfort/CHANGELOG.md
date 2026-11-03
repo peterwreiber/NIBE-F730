@@ -15,6 +15,10 @@ Egen version: upstream 0.2.36 + PR #36 (utjämning), PR #38 (semesterläge) och 
   avbrottet, och längre avbrott visas som fel precis som tidigare.
 - Inställningar går att spara medan pumpens värden är otillgängliga. De
   kontrolleras och används när värdena är tillbaka.
+- Rumsgivare som bara rapporterar vid ändring (t.ex. Sonoff SNZB-02D, Hue) räknas som
+  aktuella när en annan sensor på samma enhet och integration (luftfuktighet,
+  batteri, ljus) har rapporterat nyligen. Tidigare pausades hela styrningen när
+  temperaturen stått still längre än max_age.
 - Kaminobservationen kräver bara färska värden (15 min) i kaminrummen. Jämförelserum
   använder vanliga åldersgränsen, eftersom många givare bara rapporterar vid ändring.
 - Nytt **Semesterläge**: ange från- och till-tid, så sätts pumpens Smart Home
