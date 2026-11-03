@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from controller import ControlError, Controller, DEFAULTS, HomeAssistant, current_readings, device_peers, discover_nibe, evaluate, smoothed_indoor, validate
+from controller import OUTAGE_GRACE_SECONDS, OUTAGE_MESSAGE, ControlError, Controller, DEFAULTS, HomeAssistant, current_readings, device_peers, discover_nibe, evaluate, smoothed_indoor, validate
 
 
 def entity(entity_id, value, now=None, **attributes):
@@ -484,6 +484,95 @@ class ControllerTests(unittest.TestCase):
 
     def allow_write(self):
         self.controller.last_write = time.time() - 3600
+
+    def outage(self):
+        rows = fixtures()
+        next(e for e in rows if e["entity_id"] == "number.offset")["state"] = "unavailable"
+        self.ha.states.side_effect = lambda: rows
+
+    def recover(self):
+        self.ha.states.side_effect = lambda: fixtures()
+
+    def kinds(self):
+        return [event["kind"] for event in self.controller.events.recent(None)]
+
+    def test_short_outage_is_calm_quiet_and_never_writes(self):
+        self.enable()
+        self.allow_write()
+        self.controller.tick()
+        self.ha.set_offset.reset_mock()
+        before = self.controller.status["current_offset"]
+        self.allow_write()
+        self.outage()
+        self.controller.tick()
+        status = self.controller.status
+        self.assertIsNone(status["error_message"])
+        self.assertEqual(status["message"], OUTAGE_MESSAGE)
+        self.assertEqual(status["current_offset"], before)
+        self.assertNotIn("paused", self.kinds())
+        self.ha.set_offset.assert_not_called()
+        self.recover()
+        self.controller.tick()
+        self.assertNotIn("outage_since", self.controller.status)
+        self.assertNotIn("resumed", self.kinds())
+
+    def test_long_outage_pauses_visibly_and_resumes(self):
+        self.enable()
+        self.controller.tick()
+        self.outage()
+        self.controller.tick()
+        self.controller.outage_since = time.time() - OUTAGE_GRACE_SECONDS
+        with self.assertRaises(ControlError):
+            self.controller.tick()
+        self.assertIn("otillgänglig", self.controller.status["error_message"])
+        self.assertIn("paused", self.kinds())
+        self.recover()
+        self.controller.tick()
+        self.assertIn("resumed", self.kinds())
+        self.assertIsNone(self.controller.outage_since)
+
+    def test_outage_grace_restarts_after_recovery(self):
+        self.enable()
+        self.controller.tick()
+        self.outage()
+        self.controller.tick()
+        self.controller.outage_since = time.time() - OUTAGE_GRACE_SECONDS + 60
+        self.recover()
+        self.controller.tick()
+        self.outage()
+        self.controller.tick()
+        self.assertIsNone(self.controller.status["error_message"])
+        self.assertNotIn("paused", self.kinds())
+
+    def test_other_errors_still_pause_at_once(self):
+        self.enable()
+        self.controller.tick()
+        rows = fixtures()
+        next(e for e in rows if e["entity_id"] == "sensor.living")["state"] = "unavailable"
+        next(e for e in rows if e["entity_id"] == "sensor.bedroom")["state"] = "unavailable"
+        self.ha.states.side_effect = lambda: rows
+        with self.assertRaises(ControlError):
+            self.controller.tick()
+        self.assertIn("paused", self.kinds())
+
+    def test_outage_without_earlier_reading_is_shown_as_error_but_not_logged(self):
+        self.enable()
+        self.outage()
+        self.controller.status = {"message": "Väntar på första avläsningen.", "error_message": None}
+        with self.assertRaises(ControlError):
+            self.controller.tick()
+        self.assertTrue(self.controller.status["error_message"])
+        self.assertNotIn("paused", self.kinds())
+
+    def test_settings_can_be_saved_during_outage(self):
+        self.enable()
+        self.outage()
+        self.controller.save(config(enabled=True, target_temperature=22))
+        self.assertEqual(self.controller.config["target_temperature"], 22)
+
+    def test_saving_with_missing_offset_entity_is_still_rejected(self):
+        with self.assertRaises(ControlError):
+            self.controller.save(config(enabled=True, offset_entity="number.gone"))
 
     def test_monitor_never_writes(self):
         self.controller.save(config(target_temperature=23))

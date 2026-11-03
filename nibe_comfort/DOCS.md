@@ -854,6 +854,10 @@ faktisk besparingsberäkning ingår inte.
   samma pump** har rapporterats inom åldersgränsen. Det visar att
   integrationen fortfarande levererar data. Tystnar hela pumpen, eller blir
   värdet otillgängligt, pausas styrningen som tidigare.
+- Är kurvförskjutningen otillgänglig kortare tid än 30 minuter räknas det som
+  ett tillfälligt myUplink-avbrott. Inget skrivs, men senaste värden ligger
+  kvar med ett lugnt besked och ändringsloggen får inga rader. Inställningar
+  kan sparas under tiden. Efter 30 minuter visas felet som vanligt.
 - Samma kontroll gäller rumstermostater (`climate`), till exempel LK:
   en färsk rapport från en annan entitet på exakt samma HA-enhet kan
   bekräfta en oförändrad termostat. Givare från andra enheter används
