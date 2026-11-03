@@ -1,6 +1,8 @@
 # Ändringslogg
 
-## Ej släppt
+## 0.2.37-peter
+
+Egen version: upstream 0.2.36 + PR #36 (utjämning), PR #38 (semesterläge) och myUplink-avbrott.
 
 - Rumsregeln använder medelvärdet av den senaste timmens avläsningar av
   det styrande snittet i stället för enbart senaste värdet. Givare med
@@ -13,6 +15,13 @@
   avbrottet, och längre avbrott visas som fel precis som tidigare.
 - Inställningar går att spara medan pumpens värden är otillgängliga. De
   kontrolleras och används när värdena är tillbaka.
+- Kaminobservationen kräver bara färska värden (15 min) i kaminrummen. Jämförelserum
+  använder vanliga åldersgränsen, eftersom många givare bara rapporterar vid ändring.
+- Nytt **Semesterläge**: ange från- och till-tid, så sätts pumpens Smart Home
+  Mode till `vacation`, automatiken pausas och pumpens tidigare läge återställs
+  när tiden är slut. Perioden överlever omstart och kan avbrytas eller
+  förlängas. Ny endpoint `PUT /api/vacation` och fältet `vacation` i
+  `/api/status`.
 
 ## 0.2.36
 

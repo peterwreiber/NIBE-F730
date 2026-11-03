@@ -273,6 +273,30 @@ class ControllerFireplaceTests(unittest.TestCase):
             self.controller.tick()
         self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "unavailable")
 
+    def test_reference_room_reporting_only_on_change_does_not_block_detection(self):
+        # The comparison room last reported at the start, up to two hours ago (unchanged value); only the fireplace room must be fresh.
+        for minute in range(0, 126, 5):
+            now = self.now + minute * 60
+            self.ha.states.return_value = [
+                entity("sensor.living", 21 + max(0, minute - 60) / 60, now, unit_of_measurement="°C"),
+                entity("sensor.bedroom", 21, self.now, unit_of_measurement="°C"),
+                entity("number.offset", 0, now, min=-10, max=10, step=1),
+            ]
+            with patch("controller.time.time", return_value=now):
+                self.controller.tick()
+        self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "active")
+
+    def test_stale_fireplace_room_is_unavailable_even_with_fresh_reference(self):
+        now = self.now + HOUR
+        self.ha.states.return_value = [
+            entity("sensor.living", 21, self.now, unit_of_measurement="°C"),
+            entity("sensor.bedroom", 21, now, unit_of_measurement="°C"),
+            entity("number.offset", 0, now, min=-10, max=10, step=1),
+        ]
+        with patch("controller.time.time", return_value=now):
+            self.controller.tick()
+        self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "unavailable")
+
     def test_observation_disk_failure_prevents_physical_control(self):
         self.controller.config = {**self.cfg, "enabled": True}
         with patch("controller.atomic_json", side_effect=OSError("Disk full")):
