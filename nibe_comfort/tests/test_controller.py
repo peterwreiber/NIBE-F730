@@ -364,6 +364,22 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaisesRegex(ControlError, "saknas"):
             self.evaluate()
 
+    def test_silent_room_is_left_out_while_two_others_report(self):
+        rooms = ["sensor.living", "sensor.bedroom", "sensor.hall"]
+        self.entities.append(entity("sensor.hall", 30, self.now - 181 * 60, unit_of_measurement="°C"))
+        result = self.evaluate(room_sensors=rooms)
+        self.assertEqual(result["indoor"], 21.0, "hall is silent and left out; living 20 + bedroom 22")
+        self.entities[-1]["state"] = "unavailable"
+        self.assertEqual(self.evaluate(room_sensors=rooms)["indoor"], 21.0)
+        self.entities[0] = entity("sensor.living", 20, self.now - 181 * 60, unit_of_measurement="°C")
+        with self.assertRaisesRegex(ControlError, "gammalt|otillgänglig"):
+            self.evaluate(room_sensors=rooms)
+
+    def test_implausible_room_still_blocks_when_others_report(self):
+        self.entities.append(entity("sensor.hall", 41, self.now, unit_of_measurement="°C"))
+        with self.assertRaises(ControlError):
+            self.evaluate(room_sensors=["sensor.living", "sensor.bedroom", "sensor.hall"])
+
     def test_fresh_last_reported_overrides_old_update(self):
         self.entities = fixtures(self.now - 100000)
         for item in self.entities:

@@ -86,6 +86,8 @@ VACATION_MODE = "vacation"
 VACATION_MODE_SUFFIX = "_smart_home_mode"
 VACATION_RETRY_SECONDS = 300
 VACATION_MAX_SECONDS = 366 * 86400
+# Room sensors that must report for the average when others are silent or unavailable.
+MIN_ROOMS = 2
 
 
 class ControlError(Exception):
@@ -508,7 +510,16 @@ def indoor_temperature(config, get):
     selected = control_rooms(config)
     if not selected:
         raise ControlError("Välj minst en rumsgivare.")
-    rooms = [temperature(get(key)) for key in selected]
+    # A silent or unavailable sensor is left out of the average while at least MIN_ROOMS others
+    # report; otherwise one dead battery or a sensor that only reports on change stops all control.
+    rooms, errors = [], []
+    for key in selected:
+        try:
+            rooms.append(temperature(get(key)))
+        except ControlError as exc:
+            errors.append(exc)
+    if errors and len(rooms) < MIN_ROOMS:
+        raise errors[0]
     if any(not 5 <= value <= 40 for value in rooms):
         raise ControlError("En rumsgivare visar en orimlig inomhustemperatur (utanför 5–40 °C).")
     return sum(rooms) / len(rooms)

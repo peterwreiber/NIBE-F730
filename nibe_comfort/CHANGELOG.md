@@ -19,6 +19,9 @@ Egen version: upstream 0.2.36 + PR #36 (utjämning), PR #38 (semesterläge) och 
   aktuella när en annan sensor på samma enhet och integration (luftfuktighet,
   batteri, ljus) har rapporterat nyligen. Tidigare pausades hela styrningen när
   temperaturen stått still längre än max_age.
+- En rumsgivare som är tyst längre än max_age eller otillgänglig hoppas över i
+  rumssnittet så länge minst två andra rapporterar. Tidigare pausades hela
+  styrningen, t.ex. av en larmknappsats som bara rapporterar hela grader vid ändring.
 - Kaminobservationen använder den vanliga åldersgränsen (max_age) i stället för
   15 minuter. Givare som bara rapporterar vid ändring (t.ex. SNZB-02D) gjorde
   annars kaminfunktionen otillgänglig så fort rummet var stabilt.

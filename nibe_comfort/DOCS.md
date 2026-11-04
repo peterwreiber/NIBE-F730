@@ -101,8 +101,10 @@ uttryckligen. Varningen stoppar inte automatiken och utger sig inte för
 att bevisa att pumpen orsakat temperaturökningen. Saknade mätvärden
 är aldrig bevis för att ett rum ligger under varningsgränsen.
 
-Om en prioriterad givare är ogiltig pausas styrningen, utan att ersätta den
-med något annat rum. Övriga rum kan sakna mätvärde utan att stoppa
+En styrande givare (prioriterad, eller vald om inga prioriteras) som är tyst
+längre än mätvärdesgränsen eller otillgänglig hoppas över i snittet så länge
+minst två andra styrande givare rapporterar. Annars pausas styrningen, utan
+att ersätta den med något annat rum. Orimliga värden pausar alltid. Övriga rum kan sakna mätvärde utan att stoppa
 prioriterad styrning. Då visas inte ett missvisande delsnitt för hela huset:
 **Alla valda givare** visar **—** och felet anges på berört rum.
 
