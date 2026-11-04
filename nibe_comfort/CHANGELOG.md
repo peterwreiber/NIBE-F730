@@ -19,8 +19,9 @@ Egen version: upstream 0.2.36 + PR #36 (utjämning), PR #38 (semesterläge) och 
   aktuella när en annan sensor på samma enhet och integration (luftfuktighet,
   batteri, ljus) har rapporterat nyligen. Tidigare pausades hela styrningen när
   temperaturen stått still längre än max_age.
-- Kaminobservationen kräver bara färska värden (15 min) i kaminrummen. Jämförelserum
-  använder vanliga åldersgränsen, eftersom många givare bara rapporterar vid ändring.
+- Kaminobservationen använder den vanliga åldersgränsen (max_age) i stället för
+  15 minuter. Givare som bara rapporterar vid ändring (t.ex. SNZB-02D) gjorde
+  annars kaminfunktionen otillgänglig så fort rummet var stabilt.
 - Nytt **Semesterläge**: ange från- och till-tid, så sätts pumpens Smart Home
   Mode till `vacation`, automatiken pausas och pumpens tidigare läge återställs
   när tiden är slut. Perioden överlever omstart och kan avbrytas eller

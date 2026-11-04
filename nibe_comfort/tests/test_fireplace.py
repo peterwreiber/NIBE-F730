@@ -249,11 +249,18 @@ class ControllerFireplaceTests(unittest.TestCase):
         for minute in range(0, 126, 5):
             self.tick(minute, 21 + max(0, minute - 60) / 60)
         self.assertEqual(self.controller.snapshot()["contributions"]["fireplace"], -1)
-        with patch("controller.time.time", return_value=self.now + 150 * 60):
-            self.controller.tick()
+        now = self.now + 150 * 60
+        self.ha.states.return_value = [
+            {**entity("sensor.living", 0, now), "state": "unavailable"},
+            entity("sensor.bedroom", 21, now, unit_of_measurement="°C"),
+            entity("number.offset", 0, now, min=-10, max=10, step=1),
+        ]
+        with patch("controller.time.time", return_value=now):
+            with self.assertRaises(ControlError):
+                self.controller.tick()
         status = self.controller.snapshot()
         self.assertEqual(status["fireplace"]["phase"], "unavailable")
-        self.assertEqual(status["contributions"]["fireplace"], 0)
+        self.assertEqual(status.get("contributions", {}).get("fireplace", 0), 0)
 
     def test_finished_observation_recomputes_normal_goal_instead_of_restoring_old_offset(self):
         for minute in range(0, 126, 5):
@@ -267,14 +274,20 @@ class ControllerFireplaceTests(unittest.TestCase):
         self.assertEqual(status["desired_offset"], 0)
         self.assertEqual(status["fireplace"]["completed"], 1)
 
-    def test_stale_input_does_not_detect_heat_even_if_control_freshness_allows_it(self):
-        self.tick(0)
-        with patch("controller.time.time", return_value=self.now + HOUR):
-            self.controller.tick()
+    def test_input_older_than_max_age_is_unavailable(self):
+        now = self.now + 4 * HOUR
+        self.ha.states.return_value = [
+            entity("sensor.living", 21, self.now, unit_of_measurement="°C"),
+            entity("sensor.bedroom", 21, now, unit_of_measurement="°C"),
+            entity("number.offset", 0, now, min=-10, max=10, step=1),
+        ]
+        with patch("controller.time.time", return_value=now):
+            with self.assertRaises(ControlError):
+                self.controller.tick()
         self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "unavailable")
 
     def test_reference_room_reporting_only_on_change_does_not_block_detection(self):
-        # The comparison room last reported at the start, up to two hours ago (unchanged value); only the fireplace room must be fresh.
+        # The comparison room last reported at the start, up to two hours ago (unchanged value).
         for minute in range(0, 126, 5):
             now = self.now + minute * 60
             self.ha.states.return_value = [
@@ -286,7 +299,8 @@ class ControllerFireplaceTests(unittest.TestCase):
                 self.controller.tick()
         self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "active")
 
-    def test_stale_fireplace_room_is_unavailable_even_with_fresh_reference(self):
+    def test_unchanged_fireplace_room_within_max_age_keeps_observation_running(self):
+        # Sensors that report only on change: an hour-old value is unchanged, not missing.
         now = self.now + HOUR
         self.ha.states.return_value = [
             entity("sensor.living", 21, self.now, unit_of_measurement="°C"),
@@ -295,7 +309,7 @@ class ControllerFireplaceTests(unittest.TestCase):
         ]
         with patch("controller.time.time", return_value=now):
             self.controller.tick()
-        self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "unavailable")
+        self.assertEqual(self.controller.snapshot()["fireplace"]["phase"], "learning")
 
     def test_observation_disk_failure_prevents_physical_control(self):
         self.controller.config = {**self.cfg, "enabled": True}

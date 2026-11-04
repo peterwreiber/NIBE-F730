@@ -792,15 +792,10 @@ class Controller:
         return fireplace_intervals(self.fireplace_state)
 
     def fireplace_step(self, entities, now, peers):
-        # A short freshness limit is necessary to distinguish a rise from a reporting gap in the
-        # fireplace rooms. Reference rooms keep the normal limit: many sensors (alarm keypads, Hue)
-        # only report on change, so an old value there means unchanged, not missing.
-        readings = []
-        if self.config["fireplace_enabled"]:
-            short = {**self.config, "max_age_minutes": min(15, self.config["max_age_minutes"])}
-            fresh = {r["entity_id"]: r for r in current_readings(short, entities, now, peers)["rooms"]}
-            readings = [fresh[r["entity_id"]] if r["entity_id"] in self.config["fireplace_rooms"] else r
-                        for r in current_readings(self.config, entities, now, peers)["rooms"]]
+        # Many room sensors only report when the value changes (e.g. 0.2 °C steps), so an old but
+        # still valid value means "unchanged". A real fire raises the temperature and makes the
+        # sensor report often, so the ordinary freshness limit is enough here.
+        readings = current_readings(self.config, entities, now, peers)["rooms"] if self.config["fireplace_enabled"] else []
         state, status, events = update_fireplace(self.fireplace_state, self.config, readings, now)
         if state != self.fireplace_state:
             atomic_json(self.fireplace_path, state)

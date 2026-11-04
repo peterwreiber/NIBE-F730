@@ -211,8 +211,8 @@ värme kan ge samma mönster. Långsam eldning eller värme som sprids jämnt
 till alla rum kan missas. Det är inget brand- eller säkerhetslarm.
 
 Analysen tar en observation högst var femte minut, med giltiga och färska
-temperaturer (högst 15 minuter, eller din kortare mätvärdesgräns) i
-samtliga valda rum. En oförändrad givare kan bekräftas genom färska
+temperaturer (inom den vanliga mätvärdesgränsen) i samtliga valda rum.
+Givare som bara rapporterar vid ändring räknas som oförändrade tills dess. En oförändrad givare kan bekräftas genom färska
 rapporter från samma HA-enhet, som i övrig styrning. En temperaturökning
 i kaminrummens snitt måste vara minst 0,5 °C under ungefär 45–75 minuter,
 motsvara minst 0,7 °C per timme och vara minst 0,5 °C större än ökningen
