@@ -72,6 +72,10 @@ TEST_SECONDS = 600
 RESTORE_CONFIRM_SECONDS = 900
 # Service calls wait for the integration's cloud write (myUplink often needs more than 15 s).
 SERVICE_TIMEOUT_SECONDS = 60
+# A failed myUplink poll makes every pump entity unavailable until a later poll succeeds.
+# That happens many times a day, so short gaps are shown calmly; nothing is written meanwhile.
+OUTAGE_GRACE_SECONDS = 1800
+OUTAGE_MESSAGE = "Pumpens värden är tillfälligt borta från myUplink. Inga ändringar skickas förrän de är tillbaka."
 # Keep the current pump value unless the wanted offset is clearly closer to another step:
 # room sensors with 1 °C resolution otherwise make the offset hop every interval.
 HYSTERESIS_STEPS = 0.25
@@ -82,6 +86,8 @@ VACATION_MODE = "vacation"
 VACATION_MODE_SUFFIX = "_smart_home_mode"
 VACATION_RETRY_SECONDS = 300
 VACATION_MAX_SECONDS = 366 * 86400
+# Room sensors that must report for the average when others are silent or unavailable.
+MIN_ROOMS = 2
 
 
 class ControlError(Exception):
@@ -273,6 +279,18 @@ class HomeAssistant:
             "{% for eid in device_entities(did) %}"
             "{% set ns.items = ns.items + "
             "[{'entity_id': eid, 'device_id': did, 'platform': 'climate_device'}] %}"
+            "{% endfor %}{% endif %}{% endfor %}"
+            # Room sensors often report only on change; a fresh humidity or battery value from the
+            # same device and integration proves an unchanged temperature is still current.
+            "{% for s in states.sensor | selectattr('attributes.device_class', 'defined')"
+            " | selectattr('attributes.device_class', 'eq', 'temperature') %}"
+            "{% set did = device_id(s.entity_id) %}"
+            "{% if did and did not in ns.items | map(attribute='device_id') | list %}"
+            "{% set entry = config_entry_id(s.entity_id) %}"
+            "{% for eid in device_entities(did) if eid.split('.')[0] in ['sensor', 'binary_sensor']"
+            " and config_entry_id(eid) == entry %}"
+            "{% set ns.items = ns.items + "
+            "[{'entity_id': eid, 'device_id': did, 'platform': 'room_device'}] %}"
             "{% endfor %}{% endif %}{% endfor %}{{ ns.items | to_json }}"
         )
         registry = self.request("/template", {"template": template})
@@ -499,7 +517,16 @@ def indoor_temperature(config, get):
     selected = control_rooms(config)
     if not selected:
         raise ControlError("Välj minst en rumsgivare.")
-    rooms = [temperature(get(key)) for key in selected]
+    # A silent or unavailable sensor is left out of the average while at least MIN_ROOMS others
+    # report; otherwise one dead battery or a sensor that only reports on change stops all control.
+    rooms, errors = [], []
+    for key in selected:
+        try:
+            rooms.append(temperature(get(key)))
+        except ControlError as exc:
+            errors.append(exc)
+    if errors and len(rooms) < MIN_ROOMS:
+        raise errors[0]
     if any(not 5 <= value <= 40 for value in rooms):
         raise ControlError("En rumsgivare visar en orimlig inomhustemperatur (utanför 5–40 °C).")
     return sum(rooms) / len(rooms)
@@ -718,6 +745,7 @@ class Controller:
         self.pending = None
         self.observed_offset = None
         self.last_error = None
+        self.outage_since = None
         self.state_path = Path(data_dir) / "control-state.json"
         # Preserve the interval from the actual attempt, not the process start.
         self.last_write = 0
@@ -782,9 +810,10 @@ class Controller:
         return fireplace_intervals(self.fireplace_state)
 
     def fireplace_step(self, entities, now, peers):
-        # A short freshness limit is necessary to distinguish a rise from a reporting gap.
-        config = {**self.config, "max_age_minutes": min(15, self.config["max_age_minutes"])}
-        readings = current_readings(config, entities, now, peers)["rooms"] if config["fireplace_enabled"] else []
+        # Many room sensors only report when the value changes (e.g. 0.2 °C steps), so an old but
+        # still valid value means "unchanged". A real fire raises the temperature and makes the
+        # sensor report often, so the ordinary freshness limit is enough here.
+        readings = current_readings(self.config, entities, now, peers)["rooms"] if self.config["fireplace_enabled"] else []
         state, status, events = update_fireplace(self.fireplace_state, self.config, readings, now)
         if state != self.fireplace_state:
             atomic_json(self.fireplace_path, state)
@@ -801,14 +830,16 @@ class Controller:
                 raise ControlError("Avsluta semesterperioden och invänta återställning innan du byter pumpanslutning.")
             if config["enabled"]:
                 entities = self.ha.states()
-                peers = self.peers()
-                result = evaluate(config, entities, time.time(), peers)
-                if not result["writable"]:
-                    raise ControlError("Ingen skrivbar kurvförskjutning är konfigurerad.")
-                if config["thermostat_control_enabled"]:
-                    states = {e["entity_id"]: e for e in entities}
-                    for key in config["room_sensors"]:
-                        thermostat_state(config, states, key, time.time(), peers)
+                # During a myUplink outage nothing can be checked, and tick() will not write anyway.
+                if not self.offset_unavailable(entities, config):
+                    peers = self.peers()
+                    result = evaluate(config, entities, time.time(), peers)
+                    if not result["writable"]:
+                        raise ControlError("Ingen skrivbar kurvförskjutning är konfigurerad.")
+                    if config["thermostat_control_enabled"]:
+                        states = {e["entity_id"]: e for e in entities}
+                        for key in config["room_sensors"]:
+                            thermostat_state(config, states, key, time.time(), peers)
             changes = {key: {"from": self.config[key], "to": value} for key, value in config.items() if value != self.config[key]}
             event_id = self.events.add("settings_attempt", "Begäran att spara inställningar.", changes=changes)
             atomic_json(self.path, config)
@@ -816,6 +847,19 @@ class Controller:
             self.status = {"message": "Inställningar sparade. Väntar på ny avläsning.", "error_message": None,
                            "enabled": config["enabled"]}
             self.events.add("settings_saved", "Inställningar sparade.", request_id=event_id, changes=changes)
+
+    @staticmethod
+    def offset_unavailable(entities, config):
+        entity = next((e for e in entities if e["entity_id"] == config["offset_entity"]), None)
+        return bool(entity) and entity["state"] == "unavailable"
+
+    def transient_outage(self, entities, now):
+        """True while the offset entity has been unavailable for less than OUTAGE_GRACE_SECONDS."""
+        if entities is None or not self.offset_unavailable(entities, self.config):
+            self.outage_since = None
+            return False
+        self.outage_since = self.outage_since or now
+        return now - self.outage_since < OUTAGE_GRACE_SECONDS
 
     def thermostat_step(self, entities, now, peers, testing):
         result = {"enabled": self.config["thermostat_control_enabled"], "rooms": []}
@@ -1252,6 +1296,7 @@ class Controller:
             readings = {}
             result = {}
             fireplace = None
+            entities = None
             try:
                 entities = self.ha.states()
                 now = time.time()
@@ -1292,6 +1337,7 @@ class Controller:
                 if not self.config["enabled"]:
                     fireplace["control_note"] += " Övervakning: inga automatiska ändringar skickas."
                 result["fireplace"] = fireplace
+                self.outage_since = None
                 if self.last_error:
                     self.events.add("resumed", "Giltiga mätvärden igen; styrningen kan fortsätta.")
                     self.last_error = None
@@ -1357,7 +1403,16 @@ class Controller:
                         result["message"] = "Tidigare styrförsök misslyckades. Återläser; nytt försök efter minsta ändringsintervall om ändringen fortfarande behövs."
                 self.status = result
             except ControlError as exc:
-                if self.last_error != str(exc):
+                outage = self.transient_outage(entities, now)
+                if outage and self.status.get("contributions") and not self.status.get("error_message"):
+                    self.status = {
+                        **self.status,
+                        "outage_since": self.outage_since, "message": OUTAGE_MESSAGE,
+                        "pending_write": copy.deepcopy(self.pending),
+                        "wait_seconds": math.ceil(max(0, self.config["min_interval_minutes"] * 60 - (time.time() - self.last_write))),
+                    }
+                    return
+                if not outage and self.last_error != str(exc):
                     self.events.add("paused", "Styrningen pausad på grund av fel.", error=str(exc))
                     self.last_error = str(exc)
                 self.status = {

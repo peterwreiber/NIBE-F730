@@ -101,8 +101,10 @@ uttryckligen. Varningen stoppar inte automatiken och utger sig inte för
 att bevisa att pumpen orsakat temperaturökningen. Saknade mätvärden
 är aldrig bevis för att ett rum ligger under varningsgränsen.
 
-Om en prioriterad givare är ogiltig pausas styrningen, utan att ersätta den
-med något annat rum. Övriga rum kan sakna mätvärde utan att stoppa
+En styrande givare (prioriterad, eller vald om inga prioriteras) som är tyst
+längre än mätvärdesgränsen eller otillgänglig hoppas över i snittet så länge
+minst två andra styrande givare rapporterar. Annars pausas styrningen, utan
+att ersätta den med något annat rum. Orimliga värden pausar alltid. Övriga rum kan sakna mätvärde utan att stoppa
 prioriterad styrning. Då visas inte ett missvisande delsnitt för hela huset:
 **Alla valda givare** visar **—** och felet anges på berört rum.
 
@@ -211,8 +213,8 @@ värme kan ge samma mönster. Långsam eldning eller värme som sprids jämnt
 till alla rum kan missas. Det är inget brand- eller säkerhetslarm.
 
 Analysen tar en observation högst var femte minut, med giltiga och färska
-temperaturer (högst 15 minuter, eller din kortare mätvärdesgräns) i
-samtliga valda rum. En oförändrad givare kan bekräftas genom färska
+temperaturer (inom den vanliga mätvärdesgränsen) i samtliga valda rum.
+Givare som bara rapporterar vid ändring räknas som oförändrade tills dess. En oförändrad givare kan bekräftas genom färska
 rapporter från samma HA-enhet, som i övrig styrning. En temperaturökning
 i kaminrummens snitt måste vara minst 0,5 °C under ungefär 45–75 minuter,
 motsvara minst 0,7 °C per timme och vara minst 0,5 °C större än ökningen
@@ -856,6 +858,10 @@ faktisk besparingsberäkning ingår inte.
   samma pump** har rapporterats inom åldersgränsen. Det visar att
   integrationen fortfarande levererar data. Tystnar hela pumpen, eller blir
   värdet otillgängligt, pausas styrningen som tidigare.
+- Är kurvförskjutningen otillgänglig kortare tid än 30 minuter räknas det som
+  ett tillfälligt myUplink-avbrott. Inget skrivs, men senaste värden ligger
+  kvar med ett lugnt besked och ändringsloggen får inga rader. Inställningar
+  kan sparas under tiden. Efter 30 minuter visas felet som vanligt.
 - Samma kontroll gäller rumstermostater (`climate`), till exempel LK:
   en färsk rapport från en annan entitet på exakt samma HA-enhet kan
   bekräfta en oförändrad termostat. Givare från andra enheter används
