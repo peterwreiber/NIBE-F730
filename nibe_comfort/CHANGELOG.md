@@ -1,5 +1,30 @@
 # Ändringslogg
 
+## 0.2.38
+
+- Elpatronvyn räknar en effektgivare som står still som giltig (#37).
+  myUplink rapporterar bara när värdet ändras, så en avstängd elpatron gav
+  en enda historikrad och visades som okänd med 0 av 24 timmar täckta.
+  Nu gäller 0 kW fram till nästa rapport, ett oförändrat värde över noll i
+  högst 2 timmar och senaste rapporten fram till periodens slut.
+  Otillgängliga värden är fortfarande luckor. Pumpens elmätning är oförändrad.
+- Korta myUplink-avbrott (upp till 30 minuter) visas lugnt i stället för som
+  ett fel, och fyller inte ändringsloggen med par av pausad/återupptagen.
+  Senaste värden och planen ligger kvar. Inga ändringar skickas under
+  avbrottet, och längre avbrott visas som fel precis som tidigare.
+- Inställningar går att spara medan pumpens värden är otillgängliga. De
+  kontrolleras och används när värdena är tillbaka.
+- Rumsgivare som bara rapporterar vid ändring (t.ex. Sonoff SNZB-02D, Hue)
+  räknas som aktuella när en annan sensor på samma enhet (luftfuktighet,
+  batteri) har rapporterat nyligen.
+- En styrande rumsgivare som är tyst längre än max_age eller otillgänglig
+  hoppas över i rumssnittet så länge minst två andra rapporterar. Tidigare
+  pausades hela styrningen, t.ex. av en larmknappsats som bara rapporterar
+  hela grader vid ändring. Orimliga värden pausar fortfarande.
+- Kaminobservationen använder den vanliga åldersgränsen (max_age) i stället
+  för 15 minuter. Givare som bara rapporterar vid ändring gjorde annars
+  kaminfunktionen otillgänglig så fort rummet var stabilt.
+
 ## 0.2.37
 
 - Rumsregeln använder medelvärdet av den senaste timmens avläsningar av

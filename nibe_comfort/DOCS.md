@@ -647,9 +647,13 @@ Periodgränser och dataluckor kan ge okänd början/slut. Antalet perioder
 avser enbart den täckta delen.
 
 Samma W/kW-integrering och historiska prisberäkning används som för
-pumpens el: föregående effekt gäller fram till nästa rapport, med högst
-15 minuter mellan rapporterna. Ingen extrapolering efter sista rapporten
-eller över dataluckor. Kostnad visas per period med full eller partiell
+pumpens el: föregående effekt gäller fram till nästa rapport. myUplink
+rapporterar elpatronens effekt bara när den ändras, så HA sparar en enda
+rad för en lång period utan ändring. Därför gäller 0 kW fram till nästa
+rapport, ett oförändrat värde över noll i högst 2 timmar och senaste
+rapporten fram till periodens slut. En elpatron som står avstängd hela
+dygnet visar 0 perioder, 0 kWh och 0 kr i stället för okänt. Otillgängliga
+eller okända värden är fortfarande luckor. Kostnad visas per period med full eller partiell
 pristäckning; saknade priser betyder inte gratis el. Varken dagens pris
 eller en annan elpriskälla används som reserv.
 

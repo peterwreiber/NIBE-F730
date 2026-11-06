@@ -152,31 +152,43 @@ def price_intervals(price_rows, price_id, end, price_max_age):
     return price_segments, currency, price_error
 
 
-def usage_intervals(meter, start, end, power=False):
+def usage_intervals(meter, start, end, power=False, held=False):
+    """Intervals with a known rate, and how many were skipped.
+
+    ``held`` is for a power sensor that only reports when its value changes, such as
+    myUplink's add heat: HA then keeps a single row for a long steady period. Zero is
+    held until the next report, a steady non-zero value for at most MAX_GAP_SECONDS,
+    and the last report until ``end``. Unknown and unavailable rows are still gaps.
+    """
+    if held and meter and meter[-1][0] < end and meter[-1][1] is not None:
+        meter = [*meter, (end, None)]
     intervals = []
     skipped = 0
     for (left, previous), (right, current) in zip(meter, meter[1:]):
         if right <= start or left >= end:
             continue
         delta = None
-        if current is not None and previous is not None:
+        if previous is not None and (current is not None or held):
             delta = previous * ((right - left) / 3600) if power else current - previous
-        if delta is None or not math.isfinite(delta) or delta < 0 or right - left > (
-                MAX_POWER_GAP_SECONDS if power else MAX_GAP_SECONDS):
+        if held:
+            limit = math.inf if previous == 0 else MAX_GAP_SECONDS
+        else:
+            limit = MAX_POWER_GAP_SECONDS if power else MAX_GAP_SECONDS
+        if delta is None or not math.isfinite(delta) or delta < 0 or right - left > limit:
             skipped += 1
             continue
         intervals.append((max(start, left), min(end, right), delta / (right - left)))
     return intervals, skipped
 
 
-def consumption_report(meter_rows, price_rows, meter_id, price_id, start, end, price_max_age, power=False):
+def consumption_report(meter_rows, price_rows, meter_id, price_id, start, end, price_max_age, power=False, held=False):
     meter, _ = samples(meter_rows, meter_id, power=power)
     price_segments, currency, price_error = price_intervals(price_rows, price_id, end, price_max_age)
     hours = [{
         "start": stamp, "end": min(end, stamp + 3600), "measured_kwh": 0.0,
         "priced_kwh": 0.0, "partial_cost": 0.0, "coverage_seconds": 0.0, "priced_seconds": 0.0,
     } for stamp in range(int(start), int(end), 3600)]
-    intervals, skipped = usage_intervals(meter, start, end, power)
+    intervals, skipped = usage_intervals(meter, start, end, power, held)
     price_starts = [segment[0] for segment in price_segments]
     for left, right, rate in intervals:
         for hour in hours:

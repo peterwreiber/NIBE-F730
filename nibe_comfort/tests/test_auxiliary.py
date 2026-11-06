@@ -47,10 +47,10 @@ class HeaterReportTests(unittest.TestCase):
         self.assertEqual(len(data["runs"]), 2)
         self.assertEqual(data["observed_starts"], 2)
         self.assertEqual(data["runtime_seconds"], 900)
-        self.assertEqual(data["totals"]["coverage_seconds"], 1800)
+        self.assertEqual(data["totals"]["coverage_seconds"], 86400, "The last report, 0 kW, holds until the end")
         self.assertEqual(data["totals"]["measured_kwh"], 1)
         self.assertEqual(data["totals"]["partial_cost"], 2)
-        self.assertIsNone(data["totals"]["kwh"], "Not a complete day")
+        self.assertEqual(data["totals"]["kwh"], 1)
         first, second = data["runs"]
         self.assertEqual(first["seconds"], 600)
         self.assertEqual(first["max_kw"], 6)
@@ -69,11 +69,40 @@ class HeaterReportTests(unittest.TestCase):
         data = report(rows)
         self.assertEqual(len(data["runs"]), 2)
         self.assertEqual(data["observed_starts"], 0)
-        self.assertEqual(data["runtime_seconds"], 600)
+        self.assertEqual(data["runtime_seconds"], 900, "A value holds until it becomes unavailable")
         self.assertFalse(any(r["start_observed"] or r["end_observed"] for r in data["runs"]))
         rows = heater_rows((3, 3))
-        rows[-1]["last_updated"] = row(POWER, 3, START + 901)["last_updated"]
-        self.assertEqual(report(rows)["runtime_seconds"], 0)
+        rows[-1]["last_updated"] = row(POWER, 3, START + 7201)["last_updated"]
+        self.assertEqual(report(rows)["runtime_seconds"], 0, "A steady non-zero value holds for at most two hours")
+
+    def test_steady_zero_is_off_for_the_whole_period(self):
+        # Issue #37: myUplink only reports on change, so a heater that stays off has a single row.
+        data = report(heater_rows((0,)))
+        self.assertEqual(data["runs"], [])
+        self.assertEqual(data["runtime_seconds"], 0)
+        self.assertEqual(data["totals"]["coverage_seconds"], 86400)
+        self.assertEqual(data["totals"]["kwh"], 0)
+        self.assertEqual(data["totals"]["cost"], 0)
+        self.assertEqual(data["skipped_intervals"], 0)
+        self.assertTrue(all(h["kwh"] == 0 for h in data["hours"]))
+        rows = heater_rows((0, 7, 0))
+        rows[1]["last_updated"] = row(POWER, 7, START + 30000)["last_updated"]
+        rows[2]["last_updated"] = row(POWER, 0, START + 31200)["last_updated"]
+        data = report(rows)
+        self.assertEqual(data["runtime_seconds"], 1200, "A steady 20-minute run between two reports counts")
+        self.assertAlmostEqual(data["runs"][0]["kwh"], 7 * 1200 / 3600)
+        self.assertTrue(data["runs"][0]["start_observed"] and data["runs"][0]["end_observed"])
+        self.assertEqual(data["totals"]["coverage_seconds"], 86400)
+
+    def test_held_values_stop_at_unavailable_and_the_two_hour_limit(self):
+        unavailable = report(heater_rows((0, "unavailable")))
+        self.assertEqual(unavailable["totals"]["coverage_seconds"], 300)
+        self.assertIsNone(unavailable["totals"]["kwh"])
+        late = heater_rows((3,))
+        late[0]["last_updated"] = row(POWER, 3, END - 7200)["last_updated"]
+        self.assertEqual(report(late)["runtime_seconds"], 7200)
+        late[0]["last_updated"] = row(POWER, 3, END - 7201)["last_updated"]
+        self.assertEqual(report(late)["runtime_seconds"], 0)
 
     def test_window_boundaries_and_last_sample_are_not_extrapolated(self):
         data = report(heater_rows((3, 0, 0)))
